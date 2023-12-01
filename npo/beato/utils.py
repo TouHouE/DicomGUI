@@ -3,16 +3,54 @@ from PyQt6.QtGui import QPainterPath, QPen, QColor
 from PyQt6.QtWidgets import (QTreeWidgetItem, QGraphicsPolygonItem, QGraphicsRectItem, QGraphicsEllipseItem,
                              QGraphicsPathItem, QGraphicsItemGroup)
 from PyQt6 import QtGui
+import torch
+from wu_junde.utils import get_network
+from wu_junde.cfg import parse_args
 from typing import List, Union, Optional, Tuple, Dict, Any, TypedDict
 import numpy as np
 import os
 import pydicom as pyd
 from icecream import ic
 from npo.beato import constant as BC
+from collections import OrderedDict
 
 KEY_WW = (0x0028, 0x1051)
 KEY_WL = (0x0028, 0x1050)
 
+
+def preprocessor(image: torch.Tensor):
+    torch.einsum(image, 'bchwd->bdchw')
+
+
+def load_nn_model(ckpt_path, gpu_device):
+    args = parse_args()
+    args.sam_ckpt = f'{ckpt_path}/best_checkpoint'
+    use_gpu = False
+    if 'cpu' not in str(gpu_device):
+        GPUdevice = torch.device('cuda', gpu_device)
+        use_gpu = True
+
+
+    net = get_network(args, 'sam', use_gpu=use_gpu, gpu_device=GPUdevice, distribution=None)
+    ckpt_path = f'{ckpt_path}/checkpoint_best.pth'
+
+    print(f'=> resuming from {ckpt_path}')
+    checkpoint_file = os.path.join(ckpt_path)
+    loc = 'cuda:{}'.format(args.gpu_device) if use_gpu else gpu_device
+    checkpoint = torch.load(args.sam_ckpt, map_location=loc)
+
+    state_dict = checkpoint['state_dict']
+    new_state_dict = OrderedDict()
+    # for k, v in state_dict.items():
+    #     # name = k[7:] # remove `module.`
+    #     name = 'module.' + k
+    #     new_state_dict[name] = v
+
+    new_state_dict = state_dict
+
+    net.load_state_dict(new_state_dict)
+    net.eval()
+    return net
 
 def get_point_on_view(sp: QPointF, color: str, r: Union[int, float]):
     cx, cy = sp.x(), sp.y()
@@ -41,8 +79,7 @@ def get_graphics_item(prompt_type: BC.PromptType):
 
 
 def get_device_list():
-    results = ['cpu']
-    return results
+    return ['cpu'] + [f'cuda:{i}' for i in range(torch.cuda.device_count())]
 
 
 def get_default_ww_wl(dfile: pyd.FileDataset):
@@ -158,3 +195,4 @@ class LimitNumber(object):
 
     def __repr__(self):
         return f'{self.value + 1}/{self.limit}'
+

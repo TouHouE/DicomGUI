@@ -92,10 +92,19 @@ class DicomGraphicViewer(DeclaratorDicomGraphicViewer):
     def mousePressEvent(self, event: typing.Optional[QtGui.QMouseEvent]) -> None:
         pm = self.root.prompt_mode
 
+
         if event.button() != Qt.MouseButton.LeftButton or pm == BC.PromptType.DEFAULT or self.root.dicom_image is None:
             return
 
+
         print(f'Pressed!')
+        if self.prompt_item is not None:
+            try:
+                self.viewer_panel.removeItem(self.prompt_item)
+                self.prompt_item.destroyed
+            except Exception as e:
+                print(e)
+        # t = QGraphicsTextItem()
         self.prompt_item = BU.get_graphics_item(pm)
         self.start_p = self.mapToScene(event.pos())
 
@@ -118,12 +127,16 @@ class DicomGraphicViewer(DeclaratorDicomGraphicViewer):
         print(f'Released!')
         self.record_flag = False
         self.start_p = None
+        try:
+            if self.prompt_item is not None:
+                self.root.model_thread.pause_flag = False
+        except Exception as e:
+            print(e)
 
     def plot_dicom(self, ww, wl):
         self.viewer_panel.removeItem(self.image_item)
         norm_image = BU.dicom_map2_rgb(self.root.dicom_image, ww, wl)
         slice, w, h = norm_image.shape
-
 
         try:
             qimg = QImage(norm_image[int(self.root.frame_idx)].data, w, h, w, QImage.Format.Format_Grayscale8)

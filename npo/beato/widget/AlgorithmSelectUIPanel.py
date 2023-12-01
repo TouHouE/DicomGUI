@@ -1,3 +1,4 @@
+import icecream
 from PyQt6.QtWidgets import QWidget, QLabel, QFileDialog, QComboBox, QPushButton, QHBoxLayout
 from npo.beato import utils as BUtils
 
@@ -5,7 +6,7 @@ from npo.beato import utils as BUtils
 class Declarator(QWidget):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.weight_select_btn = QPushButton("Choose Weight", self)
+        self.weight_select_btn = QPushButton("model", self)
         self.device_hint = QLabel("Device: ", self)
         self.current_device = QComboBox(self)
 
@@ -29,14 +30,22 @@ class AlgorithmSelectUIPanel(Declarator):
         self.root = root
         self.weight_select_btn.clicked.connect(self.clicked_weight_select_btn)
         self.update_device_list()
+        self.current_device.currentIndexChanged.connect(self.indexChanged_current_device)
+
+    def indexChanged_current_device(self):
+        new_device = icecream.ic(self.current_device.currentText())
+        self.root.update_device(new_device)
+        self.root.update_title()
 
     def clicked_weight_select_btn(self):
         file, _ = QFileDialog.getOpenFileName()
         self.root.set_weight_path(file)
         self.root.update_title()
+        self.root.update_model_path(file)
 
     def update_device_list(self):
         self.current_device.clear()
         self.current_device.addItems(BUtils.get_device_list())
-        self.root.set_device(self.current_device.currentText())
+        self.root.update_device(self.current_device.currentText())
         self.root.update_title()
+

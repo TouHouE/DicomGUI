@@ -2,6 +2,7 @@ from PyQt6.QtWidgets import QMainWindow, QStatusBar
 import pydicom as pyd
 import numpy as np
 
+from npo.beato.components.ModelProcessor import ModelProcessor
 from npo.beato.widget import MainPanel, TopMenuBar
 from npo.beato import utils as BUtils
 from npo.beato import constant as BU
@@ -17,8 +18,15 @@ class Attribute:
         self.frame_idx: BUtils.LimitNumber = BUtils.LimitNumber(0, 1)
         self.prompt_mode = BU.PromptType.DEFAULT
         self.path_list = []
+
         self.device = None
         self.weight_path = None
+        self.model_thread = ModelProcessor(self,None, None)
+
+        self.image_emb = None
+        self.prompt_emb = None
+        self.mask = None
+
 
     def set_device(self, v: str):
         self.device = v
@@ -79,6 +87,19 @@ class MainApp(BuildUI, Attribute):
 
     def update_title(self):
         self.setWindowTitle(f'SegUI - {self.weight_path} - {self.device}')
+
+    def update_model_path(self, path):
+        self.set_weight_path(path)
+        self.model_thread.update_device(path)
+
+    def update_device(self, device):
+        self.set_device(device)
+        self.model_thread.update_device(device)
+
+    def update_image_emb(self, data):
+        self.image_emb = data.data
+
+
 
     def set_title(self, info):
         self.setWindowTitle(f'SegUI - {info}')

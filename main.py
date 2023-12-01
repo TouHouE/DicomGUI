@@ -10,7 +10,7 @@ def main():
     Handler.resize(1000, 600)
     # m_win = MainPanel(Handler)
     # Handler.setCentralWidget(m_win)
-
+    # Handler.model_thread.start()
     Handler.show()
     sys.exit(app.exec())
 
