@@ -1,3 +1,4 @@
+from PyQt6.QtCore import QThread
 from PyQt6.QtWidgets import QMainWindow, QStatusBar
 import pydicom as pyd
 import numpy as np
@@ -21,11 +22,6 @@ class Attribute:
 
         self.device = None
         self.weight_path = None
-        self.model_thread = ModelProcessor(self,None, None)
-
-        self.image_emb = None
-        self.prompt_emb = None
-        self.mask = None
 
 
     def set_device(self, v: str):
@@ -54,9 +50,11 @@ class Attribute:
 
 
 class BuildUI(QMainWindow):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, thread_, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.setWindowTitle('SegUI')
+        self.model_worker = thread_
+        self.model_worker.root = self
 
         self.main_panel = MainPanel(self, parent=self)
         self.menu_bar = TopMenuBar(self, parent=self)
@@ -74,8 +72,16 @@ class BuildUI(QMainWindow):
 class MainApp(BuildUI, Attribute):
     app_name: str = 'SegUI'
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, thread_, *args, **kwargs):
+        super().__init__(thread_, *args, **kwargs)
+        # self.model_thread = QThread(self)
+        # self.model_worker = ModelProcessor(self, self.weight_path, self.device)
+        # self.model_worker: ModelProcessor = thread_
+        # self.model_worker.root = self
+        # self.model_worker.moveToThread(self.model_thread)
+        # self.model_worker.threa
+        # self.model_worker.thread_name = self.model_thread.currentThreadId()
+        # self.model_worker.start()
 
         # self.status_bar.setStatusTip('fda')
         # self.status_bar.showMessage('wtf')
@@ -90,16 +96,17 @@ class MainApp(BuildUI, Attribute):
 
     def update_model_path(self, path):
         self.set_weight_path(path)
-        self.model_thread.update_device(path)
+        # self.model_worker.update_path(path)
+        self.model_worker.model_update_flag = True
 
     def update_device(self, device):
         self.set_device(device)
-        self.model_thread.update_device(device)
+        # self.model_worker.update_device(device)
+        self.model_worker.model_update_flag = True
 
-    def update_image_emb(self, data):
-        self.image_emb = data.data
-
-
+    def update_frame_idx(self, idx):
+        self.set_frame_idx(idx)
+        self.model_worker.image_embedding_update_flag = True
 
     def set_title(self, info):
         self.setWindowTitle(f'SegUI - {info}')

@@ -3,31 +3,72 @@ from PyQt6.QtGui import QPainterPath, QPen, QColor
 from PyQt6.QtWidgets import (QTreeWidgetItem, QGraphicsPolygonItem, QGraphicsRectItem, QGraphicsEllipseItem,
                              QGraphicsPathItem, QGraphicsItemGroup)
 from PyQt6 import QtGui
+
 import torch
-from wu_junde.utils import get_network
-from wu_junde.cfg import parse_args
-from typing import List, Union, Optional, Tuple, Dict, Any, TypedDict
+from torchvision.transforms import transforms
 import numpy as np
-import os
 import pydicom as pyd
 from icecream import ic
-from npo.beato import constant as BC
+
+from typing import List, Union, Optional, Tuple, Dict, Any, TypedDict
 from collections import OrderedDict
+import os
+
+from npo.beato import constant as BC
+from wu_junde.utils import get_network
+from wu_junde.cfg import parse_args
 
 KEY_WW = (0x0028, 0x1051)
 KEY_WL = (0x0028, 0x1050)
+TRANSFER = transforms.ToTensor()
 
 
-def preprocessor(image: torch.Tensor):
-    torch.einsum(image, 'bchwd->bdchw')
+def preprocessor(dimg_np: np.ndarray) -> torch.Tensor:
+    dimg_np = dimg_np[:, :, None]  # HxWx1
+    dimg_np = np.repeat(dimg_np, 3, 2)  # HxWx3
+    dimg_pt = TRANSFER(np.resize(dimg_np, (1024, 1024, 3)))
+    return dimg_pt.unsqueeze(0)  # 1x3xHxW
+
+def preprocess_of_prompt(clicks=None, labels=None, boxes=None, masks=None, is_doodle=None):
+    """
+
+    :param clicks: [[x0, y0], [x1, y1], ..., [xn, yn]]
+    :param labels: [[l0], [l1], ..., [ln]], is corresponding to :param clicks
+    :param boxes: [[Xtl0, Ytl0, Xbr0, Ybr0], ... [Xtln, Ytln, Xbrn, Ybrn]], tl: top-left, br: bottom-right.
+    :param masks:
+    :param is_doodle: boolean
+    :return:
+    """
+    assert clicks is not None or boxes is not None or masks is not None, 'No prompt input'
+
+    if clicks is not None:
+        clicks = torch.as_tensor(clicks).unsqueeze(0)
+        if labels is None:
+            labels = torch.ones(clicks.shape[:2])
+    if boxes is not None:
+        boxes = torch.as_tensor(boxes).unsqueeze(0)
+
+    return {
+        'points': (clicks, labels),
+        'boxes': boxes,
+        'masks': masks
+    }
 
 
-def load_nn_model(ckpt_path, gpu_device):
+def load_nn_model(ckpt_path: str, gpu_device: str):
+    """
+
+    :param ckpt_path: folder path not file
+    :param gpu_device: 'cpu', or 'cuda:0', 'cuda:1' ... 'cuda:n'
+    :return:
+    """
     args = parse_args()
     args.sam_ckpt = f'{ckpt_path}/best_checkpoint'
     use_gpu = False
+    GPUdevice = gpu_device
+
     if 'cpu' not in str(gpu_device):
-        GPUdevice = torch.device('cuda', gpu_device)
+        GPUdevice = torch.device(gpu_device)
         use_gpu = True
 
 

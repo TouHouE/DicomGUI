@@ -8,5 +8,6 @@ class PromptType(Enum):
     MASK = 'mask'
     DEFAULT = 'mouse'
 
-
+    def is_spare_prompt(self, prompt: 'PromptType'):
+        return prompt == PromptType.CLICK or prompt == PromptType.BOX or prompt == PromptType.DOODLE
 RADIUS = 10

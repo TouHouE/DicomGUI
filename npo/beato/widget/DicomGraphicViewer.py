@@ -1,5 +1,6 @@
 import typing
 
+import torch
 # import PyQt6.QtCore.QEvent
 from PyQt6 import QtGui
 from PyQt6.QtWidgets import QWidget, QGraphicsView, QGraphicsScene, QGraphicsTextItem, QGraphicsRectItem, \
@@ -32,7 +33,11 @@ class DicomGraphicViewer(DeclaratorDicomGraphicViewer):
         super().__init__(*args, **kwargs)
         self.root = root
         self.image_item = QGraphicsPixmapItem()
+        self.image_item.setPos(0, 0)
+        self.mask_item = QGraphicsPixmapItem()
+        self.mask_item.setPos(0, 0)
         self.viewer_panel.addItem(self.image_item)
+        self.viewer_panel.addItem(self.mask_item)
         self.sw0 = None
         self.sh0 = None
         self.xb = None
@@ -40,6 +45,7 @@ class DicomGraphicViewer(DeclaratorDicomGraphicViewer):
         self.record_flag = False
         self.prompt_item = None
         self.start_p = None
+        self.root.model_worker.MaskEvent.connect(self.show_mask)
 
     # def resizeEvent(self, event: typing.Optional[QtGui.QResizeEvent]) -> None:
     #     super().resizeEvent(event)
@@ -53,15 +59,20 @@ class DicomGraphicViewer(DeclaratorDicomGraphicViewer):
     def wheelEvent(self, event: typing.Optional[QtGui.QWheelEvent]) -> None:
         if self.root.dicom_image is None or self.record_flag:
             return
+
+        #  TODO: Clear the try ... except ...
         try:
             df, fi, sp = self.root.dicom_file, self.root.frame_idx, self.mapToScene(event.position().toPoint())
             results, new_idx = BU.extract_info_from_event(event, df, fi, sp)
 
-            self.root.set_frame_idx(new_idx)
+            self.root.update_frame_idx(new_idx)
             self.plot_dicom(*self.root.ww_wl)
             self.root.show_cursor_info(**results)
+
         except Exception as e:
             print(f'WheelEvent: {e}')
+
+    #  TODO: Clear the try ... except ...
     # Local Event
     def mouseMoveEvent(self, event: typing.Optional[QtGui.QMouseEvent]) -> None:
         if self.root.dicom_image is None:
@@ -89,14 +100,12 @@ class DicomGraphicViewer(DeclaratorDicomGraphicViewer):
         elif self.root.prompt_mode == BC.PromptType.MASK:
             pass
 
+    #  TODO: Clear the try ... except ...
     def mousePressEvent(self, event: typing.Optional[QtGui.QMouseEvent]) -> None:
         pm = self.root.prompt_mode
 
-
         if event.button() != Qt.MouseButton.LeftButton or pm == BC.PromptType.DEFAULT or self.root.dicom_image is None:
             return
-
-
         print(f'Pressed!')
         if self.prompt_item is not None:
             try:
@@ -104,7 +113,7 @@ class DicomGraphicViewer(DeclaratorDicomGraphicViewer):
                 self.prompt_item.destroyed
             except Exception as e:
                 print(e)
-        # t = QGraphicsTextItem()
+
         self.prompt_item = BU.get_graphics_item(pm)
         self.start_p = self.mapToScene(event.pos())
 
@@ -125,16 +134,21 @@ class DicomGraphicViewer(DeclaratorDicomGraphicViewer):
 
     def mouseReleaseEvent(self, event: typing.Optional[QtGui.QMouseEvent]) -> None:
         print(f'Released!')
-        self.record_flag = False
         self.start_p = None
-        try:
-            if self.prompt_item is not None:
-                self.root.model_thread.pause_flag = False
-        except Exception as e:
-            print(e)
 
+        if not self.record_flag:
+            return
+        self.record_flag = False
+
+        if self.root.model_worker.is_work():
+            # try:
+            self.send_prompt2thread()
+            # except Exception as e:
+            #     print('send_prompt2thread()', e)
+
+    #  TODO: Clear the try ... except ...
     def plot_dicom(self, ww, wl):
-        self.viewer_panel.removeItem(self.image_item)
+        self.remove_dicom()
         norm_image = BU.dicom_map2_rgb(self.root.dicom_image, ww, wl)
         slice, w, h = norm_image.shape
 
@@ -146,19 +160,30 @@ class DicomGraphicViewer(DeclaratorDicomGraphicViewer):
             self.viewer_panel.addItem(self.image_item)
             self.viewer_panel.setSceneRect(self.sceneRect())
         except Exception as e:
-            print('At plot_dicom', e)
+            print('At plot_dicom, ', e)
         print(len(self.viewer_panel.items()))
-
-    def clear_image(self, just_image=False):
-        self.viewer_panel.clear()
 
     def show_information_on_status_bar(self, event):
         pos = self.mapToScene(event.pos())
         results = BU.extract_info_from_event(event, self.root.dicom_file, self.root.frame_idx, pos)
         self.root.show_cursor_info(**results)
 
+    def show_mask(self, emitData):
+        self.viewer_panel.removeItem(self.mask_item)
+        mask = emitData.mask()
+        h, w = emitData['size']
+        qimg = QImage(mask, w, h, w, QImage.Format.Format_RGB888)
+        qimg = QPixmap.fromImage(qimg)
+        self.mask_item = QGraphicsPixmapItem(qimg)
+        self.mask_item.setPos(0, 0)
+        self.mask_item.setOpacity(.5)
+        self.viewer_panel.addItem(self.mask_item)
+        self.viewer_panel.setSceneRect(self.sceneRect())
+
+
+
     def build_bbox_prompt(self, current_p: QPointF, image_shape=[512, 512]):
-        self.viewer_panel.removeItem(self.prompt_item)
+        self.remove_prompt()
         sx, sy = self.start_p.x(), self.start_p.y()
         cx, cy = current_p.x(), current_p.y()
 
@@ -172,18 +197,41 @@ class DicomGraphicViewer(DeclaratorDicomGraphicViewer):
         self.viewer_panel.addItem(self.prompt_item)
 
     def build_doodle_prompt(self, current_p: QPointF):
-        self.viewer_panel.removeItem(self.prompt_item)
-
+        self.remove_prompt()
         self.prompt_item.addToGroup(BU.get_point_on_view(current_p, 'color', BC.RADIUS))
-        dd = QGraphicsItemGroup()
-        # dd.setP
         self.viewer_panel.addItem(self.prompt_item)
         pass
 
     def build_click_prompt(self, event):
         pass
 
-
     def build_mask_prompt(self, event):
         pass
+
+    def remove_prompt(self):
+        self.viewer_panel.removeItem(self.prompt_item)
+
+    def remove_dicom(self):
+        self.viewer_panel.removeItem(self.image_item)
+
+    def send_prompt2thread(self):
+        boxes, labels, coords, masks, is_doodle = [None] * 5
+
+        if self.root.prompt_mode == BC.PromptType.CLICK:
+            coords = [[self.prompt_item.x(), self.prompt_item.y()]]
+            labels = [[1]]
+        if self.root.prompt_mode == BC.PromptType.BOX:
+            rect = self.prompt_item.rect()
+            boxes = [rect.topLeft().x(), rect.topLeft().y(), rect.bottomRight().x(), rect.bottomRight().y()]
+            boxes = torch.as_tensor(boxes, dtype=torch.float).unsqueeze(0)
+        if self.root.prompt_mode == BC.PromptType.DOODLE:
+            pass
+        if self.root.prompt_mode == BC.PromptType.MASK:
+            pass
+
+        self.root.model_worker.decode_mask({
+            'points': (coords, labels),
+            'boxes': boxes,
+            'masks': masks
+        })
 
